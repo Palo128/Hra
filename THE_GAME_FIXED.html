@@ -1,0 +1,2298 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Obrana Obývačky: Upside Down</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Orbitron:wght@600;800;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050508;
+            font-family: 'Inter', sans-serif;
+            touch-action: none;
+        }
+        .font-stranger {
+            font-family: 'Creepster', cursive;
+            letter-spacing: 2px;
+        }
+        .font-arcade {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .glass-hud {
+            background: rgba(10, 14, 24, 0.58);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            transition: all 0.2s ease;
+        }
+        .glass-hud:hover {
+            background: rgba(10, 14, 24, 0.82);
+            border-color: rgba(255, 255, 255, 0.28);
+        }
+        .cam-btn-active {
+            background: rgba(6, 182, 212, 0.38) !important;
+            border-color: #22d3ee !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.55);
+        }
+        @keyframes floatScore {
+            0% { transform: translate(-50%, 0) scale(0.85); opacity: 1; }
+            35% { transform: translate(-50%, -26px) scale(1.06); opacity: 1; }
+            100% { transform: translate(-50%, -56px) scale(0.94); opacity: 0; }
+        }
+        .floating-label {
+            position: absolute;
+            pointer-events: none;
+            animation: floatScore 1.15s ease-out forwards;
+            font-weight: 900;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.95);
+            z-index: 30;
+            white-space: nowrap;
+        }
+        .rift-tag {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 18;
+            transition: transform 0.08s linear;
+        }
+        .monster-tag {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            pointer-events: none;
+            z-index: 19;
+        }
+    </style>
+</head>
+<body class="bg-black text-white">
+
+    <!-- 3D WEBGL CONTAINER -->
+    <div id="canvasContainer" class="relative w-screen h-screen overflow-hidden cursor-crosshair">
+        <!-- 2D Overlay for 3D Rift Countdown Rings & Demogorgon Health Bars -->
+        <div id="overlay3DLabels" class="pointer-events-none absolute inset-0 overflow-hidden z-15"></div>
+
+        <!-- Floating Combat Popups -->
+        <div id="floatingLayer" class="pointer-events-none absolute inset-0 overflow-hidden z-20"></div>
+
+        <!-- Red Lightning Flash Overlay -->
+        <div id="lightningOverlay" class="pointer-events-none absolute inset-0 bg-red-600/0 transition-colors duration-75 z-10"></div>
+
+        <!-- ULTRA-SLEEK TOP HUD BAR (Takes < 5% of screen so the 3D living room is 100% visible) -->
+        <header class="glass-hud absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 sm:gap-3 rounded-full px-3 sm:px-4 py-1 shadow-xl max-w-[99vw] overflow-x-auto">
+            <!-- World State Badge -->
+            <div id="worldBadge" class="flex items-center gap-1.5 text-xs font-extrabold text-emerald-300 whitespace-nowrap">
+                <span id="worldEmoji">🏠</span>
+                <span id="worldTitle" class="hidden md:inline">Originál Obývačka</span>
+                <span id="waveTag" class="px-1.5 py-0.5 text-[10px] bg-white/10 rounded-full text-white font-arcade">Cieľ: 1000 b</span>
+            </div>
+
+            <div class="h-3.5 w-[1px] bg-white/15 shrink-0"></div>
+
+            <!-- Score Progress Bar -->
+            <div class="flex items-center gap-1.5 shrink-0">
+                <div class="w-16 sm:w-24 h-2 bg-slate-800/90 rounded-full overflow-hidden border border-white/15">
+                    <div id="scoreBar" class="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <span id="scoreDisplay" class="font-arcade text-[11px] sm:text-xs font-bold text-white whitespace-nowrap">0 / 1000</span>
+            </div>
+
+            <div class="h-3.5 w-[1px] bg-white/15 shrink-0"></div>
+
+            <!-- Round Timer -->
+            <div class="flex items-center gap-1 font-arcade text-[11px] sm:text-xs font-bold text-amber-300 shrink-0" title="Čas kola">
+                <span>⏱️</span>
+                <span id="timerDisplay">50s</span>
+            </div>
+
+            <!-- Hearts -->
+            <div id="heartsContainer" class="hidden sm:flex items-center gap-0.5 text-xs shrink-0" title="Zdravie obývačky">
+                <span>❤️</span><span>❤️</span><span>❤️</span><span>❤️</span>
+            </div>
+
+            <div class="h-3.5 w-[1px] bg-white/15 shrink-0"></div>
+
+            <!-- Camera View Switcher (1: Celá Obývačka Širokouhlo, 2: Fotka 1, 3: Fotka 2) -->
+            <div class="flex items-center gap-1 shrink-0" title="Pohľad kamery (Alebo ťahaj myšou so stlačeným pravým tlačidlom)">
+                <button id="camBtn1" onclick="setCameraPreset(1)" class="cam-btn-active px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border border-white/15 bg-white/5 text-slate-200 transition">
+                    👁️ Celá Izba
+                </button>
+                <button id="camBtn2" onclick="setCameraPreset(2)" class="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border border-white/15 bg-white/5 text-slate-200 transition">
+                    📷 Fotka 1
+                </button>
+                <button id="camBtn3" onclick="setCameraPreset(3)" class="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border border-white/15 bg-white/5 text-slate-200 transition">
+                    📷 Fotka 2
+                </button>
+                <button id="invertToggleBtn" onclick="togglePersistentUpsideDownCamera()" class="hidden px-2 py-0.5 rounded-full text-[10px] font-bold border border-red-400/50 bg-red-900/40 text-red-200 transition" title="Otočiť obraz o 180° hore nohami / normálne">
+                    🔄 180° Pohľad
+                </button>
+            </div>
+
+            <!-- Manual Upside Down Flip Test Button -->
+            <button onclick="triggerUpsideDownFlipManual()" class="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-red-600/35 hover:bg-red-600/60 border border-red-400/50 text-red-100 transition shrink-0" title="Okamžite spustiť 180° prevrat do Upside Down">
+                🌀 Prepnúť Upside Down
+            </button>
+
+            <!-- Info Button -->
+            <button onclick="toggleInfoModal()" class="w-6 h-6 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-xs transition shrink-0" title="Pomocník">
+                ℹ️
+            </button>
+        </header>
+
+        <!-- COMPACT BOTTOM ACTION BAR -->
+        <footer class="glass-hud absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full px-3 py-1 shadow-lg">
+            <div class="text-[11px] text-cyan-200 font-semibold flex items-center gap-1 px-1">
+                <span>🖐️</span> <span class="hidden sm:inline">Klik:</span> <strong>Telekinéza</strong>
+            </div>
+            <div class="h-3 w-[1px] bg-white/15"></div>
+            <button onclick="triggerSaltLampWave()" class="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-500/25 hover:bg-orange-500/45 border border-orange-400/40 text-orange-200 transition">
+                <span>🧂</span> <span id="saltLampBtnText">Soľná Lampa (Space)</span>
+            </button>
+            <button onclick="triggerTvWasherOverload()" class="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-500/25 hover:bg-purple-500/45 border border-purple-400/40 text-purple-200 transition">
+                <span>⚡</span> <span id="arcBtnText">TV + Práčka Výboj (E)</span>
+            </button>
+        </footer>
+
+        <!-- DRAMATIC 180° UPSIDE DOWN TRANSITION BANNER -->
+        <div id="flipBanner" class="hidden pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-red-950/35">
+            <h2 id="flipBannerTitle" class="font-stranger text-5xl sm:text-7xl text-red-500 tracking-widest drop-shadow-[0_0_30px_rgba(255,30,39,1)] text-center px-4">
+                🌀 PREPAD DO UPSIDE DOWN!
+            </h2>
+            <p id="flipBannerSub" class="font-arcade text-xs sm:text-base text-cyan-100 mt-2 bg-black/80 px-5 py-2 rounded-full border border-red-500/60 shadow-lg text-center max-w-xl">
+                Trhlina nebola zatvorená včas! Obývačka sa prevracia hore nohami a prichádzajú obrovskí Demogorgoni!
+            </p>
+        </div>
+
+        <!-- START / INFO MODAL (Does not block view during gameplay) -->
+        <div id="infoModal" class="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div class="max-w-xl w-full bg-slate-950/95 border-2 border-red-600/80 rounded-3xl p-5 sm:p-6 text-center shadow-[0_0_60px_rgba(255,30,39,0.45)]">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold mb-2">
+                    ✨ Širokouhlá 3D Obývačka podľa vašich 2 fotiek (Uprataná!)
+                </div>
+                <h1 class="font-stranger text-4xl sm:text-5xl text-red-500 tracking-wider drop-shadow-[0_0_12px_rgba(255,30,39,0.85)]">
+                    OBRANA OBÝVAČKY: DEMOGORGON
+                </h1>
+                <p class="text-xs sm:text-sm text-slate-300 mt-1 mb-4">
+                    Vidíš naraz <strong>celý zelený U-gauč, okno so žalúziami Deň/Noc, práčku Beko, stolíky aj veľkú TV stenu napravo</strong>. Rozhliadať sa môžeš aj ťahaním pravým tlačidlom myši!
+                </p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left mb-4">
+                    <div class="bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-3">
+                        <div class="text-xs font-extrabold text-emerald-400 uppercase mb-1">🏠 1. Originálny Svet (Zatváraj Trhliny!)</div>
+                        <p class="text-[11px] text-slate-300 leading-relaxed">
+                            Na stenách, pri TV a žalúziách praskajú <strong class="text-red-400">Červené Trhliny s 8-sekundovým odpočtom</strong>. Klikaj na ne a zatváraj ich! <strong class="text-amber-300">Ak čo i len 1 trhlinu nestihneš zatvoriť (alebo vyprší čas), okamžite sa prepadneš do Upside Down!</strong>
+                        </p>
+                    </div>
+                    <div class="bg-slate-900/90 border border-red-500/50 rounded-2xl p-3">
+                        <div class="text-xs font-extrabold text-red-400 uppercase mb-1">🌀 2. Upside Down (Rastúci Demogorgoni!)</div>
+                        <p class="text-[11px] text-slate-300 leading-relaxed">
+                            Obývačka sa otočí o <strong>180° hore nohami</strong>, sfarbí sa do temnej červeno-modrej búrky s lianami a útočia <strong>stále väčší dvojnohí Demogorgoni</strong>: Mladý (1x) ➔ Dospelý (1.45x) ➔ Alfa (1.95x) ➔ <strong>Kolosálny Mega-Demogorgon (2.6x)</strong>!
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/70 border border-white/10 rounded-2xl p-2.5 text-[11px] text-slate-300 mb-4 flex flex-wrap justify-around gap-2">
+                    <span>🧂 <strong>Soľná lampa na okne (Space):</strong> Zapečatí trhliny</span>
+                    <span>⚡ <strong>TV + Práčka Beko (E):</strong> Blesk cez celú obývačku</span>
+                    <span>🧇 <strong>Eggo vafla na stolíku:</strong> +250 b. & spomalenie</span>
+                </div>
+
+                <button onclick="closeModalAndPlay()" class="w-full py-3.5 bg-gradient-to-r from-red-600 via-red-500 to-orange-500 hover:from-red-500 hover:to-orange-400 text-white font-arcade font-black text-base sm:text-lg rounded-2xl shadow-lg shadow-red-600/40 transition active:scale-95 cursor-pointer">
+                    🚀 SPUSTIŤ HRU V 3D OBÝVAČKE
+                </button>
+            </div>
+        </div>
+
+        <!-- GAME OVER MODAL -->
+        <div id="gameOverModal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+            <div class="max-w-md w-full bg-slate-950 border-2 border-red-600 rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(255,30,39,0.5)]">
+                <div class="text-5xl mb-2">🌺👹</div>
+                <h2 class="font-stranger text-4xl sm:text-5xl text-red-500 tracking-wider mb-1">
+                    DEMOGORGONI OVLÁDLI IZBU!
+                </h2>
+                <p class="text-xs sm:text-sm text-slate-300 mb-5">
+                    Obrovskí Demogorgoni z Upside Down prelomili obranu obývačky!
+                </p>
+                <div class="bg-slate-900 border border-white/10 rounded-2xl p-3.5 mb-5 flex justify-around">
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase font-bold">Celkové Skóre</div>
+                        <div id="finalScoreVal" class="font-arcade text-2xl font-black text-white">0</div>
+                    </div>
+                    <div class="w-[1px] bg-white/10"></div>
+                    <div>
+                        <div class="text-[10px] text-amber-400 uppercase font-bold">Najväčší Demogorgon</div>
+                        <div id="finalMonsterVal" class="font-arcade text-xs sm:text-sm font-black text-amber-300 mt-1.5">Mladý Demogorgon (1.0x)</div>
+                    </div>
+                </div>
+                <button onclick="resetFullGame()" class="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-arcade font-black text-base rounded-2xl shadow-lg transition active:scale-95 cursor-pointer">
+                    🔄 HRAŤ ZNOVA
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /*************************************************************************
+         * 1. WEB AUDIO SYNTHESIZER (Stranger Things Bass Arpeggio + Demogorgon Roars)
+         *************************************************************************/
+        class SynthSoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+                this.timer = null;
+                this.step = 0;
+                this.normalNotes = [130.81, 164.81, 196.00, 246.94, 261.63, 246.94, 196.00, 164.81];
+                this.upsideNotes = [110.00, 130.81, 146.83, 196.00, 207.65, 196.00, 146.83, 130.81];
+            }
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            }
+            startMusic() {
+                this.init();
+                if (this.timer) clearInterval(this.timer);
+                this.timer = setInterval(() => {
+                    if (!this.enabled || !state.running || state.paused) return;
+                    const arr = state.world === 'normal' ? this.normalNotes : this.upsideNotes;
+                    const freq = arr[this.step % arr.length];
+                    this.step++;
+                    this.playPulse(freq, state.world === 'normal' ? 0.14 : 0.22, state.world === 'normal' ? 520 : 280, 0.025);
+                }, 210);
+            }
+            playPulse(freq, dur, cutoff = 450, vol = 0.03) {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const t = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const flt = this.ctx.createBiquadFilter();
+                    const g = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(freq, t);
+                    flt.type = 'lowpass';
+                    flt.frequency.setValueAtTime(cutoff, t);
+                    g.gain.setValueAtTime(vol, t);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                    osc.connect(flt); flt.connect(g); g.connect(this.ctx.destination);
+                    osc.start(t); osc.stop(t + dur);
+                } catch (e) {}
+            }
+            laser() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const t = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const g = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(680, t);
+                    osc.frequency.exponentialRampToValueAtTime(110, t + 0.15);
+                    g.gain.setValueAtTime(0.15, t);
+                    g.gain.exponentialRampToValueAtTime(0.005, t + 0.15);
+                    osc.connect(g); g.connect(this.ctx.destination);
+                    osc.start(t); osc.stop(t + 0.15);
+                } catch (e) {}
+            }
+            sealChime() {
+                if (!this.enabled || !this.ctx) return;
+                [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+                    setTimeout(() => this.playPulse(f, 0.15, 1800, 0.08), i * 45);
+                });
+            }
+            demogorgonRoar(scale = 1) {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const t = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const osc2 = this.ctx.createOscillator();
+                    const g = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc2.type = 'square';
+                    osc.frequency.setValueAtTime(175 / Math.sqrt(scale), t);
+                    osc.frequency.linearRampToValueAtTime(38 / Math.sqrt(scale), t + 0.5);
+                    osc2.frequency.setValueAtTime(120 / Math.sqrt(scale), t);
+                    osc2.frequency.linearRampToValueAtTime(28 / Math.sqrt(scale), t + 0.5);
+                    g.gain.setValueAtTime(0.24, t);
+                    g.gain.exponentialRampToValueAtTime(0.005, t + 0.5);
+                    osc.connect(g); osc2.connect(g); g.connect(this.ctx.destination);
+                    osc.start(t); osc2.start(t);
+                    osc.stop(t + 0.5); osc2.stop(t + 0.5);
+                } catch (e) {}
+            }
+            upsideDownThunder() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const t = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const g = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(195, t);
+                    osc.frequency.exponentialRampToValueAtTime(26, t + 2.4);
+                    g.gain.setValueAtTime(0.32, t);
+                    g.gain.exponentialRampToValueAtTime(0.005, t + 2.4);
+                    osc.connect(g); g.connect(this.ctx.destination);
+                    osc.start(t); osc.stop(t + 2.4);
+                } catch (e) {}
+            }
+        }
+        const sfx = new SynthSoundEngine();
+
+        /*************************************************************************
+         * 2. HIGH-RESOLUTION PROCEDURAL TEXTURES FOR REALISTIC LIVING ROOM
+         *************************************************************************/
+        function createLightOakFloorTexture() {
+            const c = document.createElement('canvas');
+            c.width = 1024; c.height = 1024;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#c19f74';
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            const planks = 10;
+            const pw = 1024 / planks;
+            for (let i = 0; i < planks; i++) {
+                const x = i * pw;
+                const shades = ['#be9c71', '#c7a77d', '#b69368', '#c3a278', '#ba976b'];
+                ctx.fillStyle = shades[i % shades.length];
+                ctx.fillRect(x, 0, pw, 1024);
+
+                // Realistic oak wood knots & subtle grain lines
+                ctx.strokeStyle = 'rgba(78, 52, 26, 0.14)';
+                ctx.lineWidth = 2;
+                for (let g = 0; g < 24; g++) {
+                    ctx.beginPath();
+                    const gx = x + Math.random() * pw;
+                    ctx.moveTo(gx, 0);
+                    ctx.bezierCurveTo(gx + 10, 340, gx - 10, 680, gx, 1024);
+                    ctx.stroke();
+                }
+
+                // Plank bevels
+                ctx.strokeStyle = 'rgba(65, 42, 20, 0.38)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, 0, pw, 1024);
+                const jointY = ((i * 293) % 820) + 90;
+                ctx.beginPath();
+                ctx.moveTo(x, jointY);
+                ctx.lineTo(x + pw, jointY);
+                ctx.stroke();
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(3, 4);
+            return tex;
+        }
+
+        function createWalnutWoodTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512; c.height = 512;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#633d24';
+            ctx.fillRect(0, 0, 512, 512);
+            ctx.strokeStyle = 'rgba(35, 18, 8, 0.28)';
+            ctx.lineWidth = 2.5;
+            for (let i = 0; i < 45; i++) {
+                ctx.beginPath();
+                const y = Math.random() * 512;
+                ctx.moveTo(0, y);
+                ctx.bezierCurveTo(170, y + 8, 340, y - 8, 512, y);
+                ctx.stroke();
+            }
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createZebraBlindsTexture(isUpsideDown = false) {
+            const c = document.createElement('canvas');
+            c.width = 512; c.height = 512;
+            const ctx = c.getContext('2d');
+            const stripes = 18;
+            const sh = 512 / stripes;
+            for (let i = 0; i < stripes; i++) {
+                if (i % 2 === 0) {
+                    // Opaque warm taupe-brown fabric band (exact match to photos)
+                    ctx.fillStyle = isUpsideDown ? '#2a0d16' : '#9c7c60';
+                } else {
+                    // Sheer day/night mesh stripe with soft daylight filtering through
+                    ctx.fillStyle = isUpsideDown ? '#801329' : '#dfd0be';
+                }
+                ctx.fillRect(0, i * sh, 512, sh);
+                ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+                ctx.strokeRect(0, i * sh, 512, sh);
+            }
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createGreenMonsterPillowTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            // Bright lime green pillow on front-left chaise in both photos
+            ctx.fillStyle = '#68d316';
+            ctx.fillRect(0, 0, 256, 256);
+
+            const spots = [[58, 64], [185, 62], [124, 130], [64, 196], [190, 192]];
+            spots.forEach(([x, y]) => {
+                ctx.fillStyle = '#1d4ed8';
+                ctx.beginPath();
+                ctx.arc(x, y, 24, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(x - 7, y - 4, 6, 0, Math.PI * 2);
+                ctx.arc(x + 7, y - 4, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#090d16';
+                ctx.beginPath();
+                ctx.arc(x - 7, y - 4, 2.5, 0, Math.PI * 2);
+                ctx.arc(x + 7, y - 4, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createDogPrintPillowTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#e5dccf';
+            ctx.fillRect(0, 0, 256, 256);
+            // Cute dog face print on the back corner sofa cushion
+            ctx.fillStyle = '#4a321f';
+            ctx.beginPath();
+            ctx.ellipse(82, 118, 22, 42, 0.28, 0, Math.PI * 2);
+            ctx.ellipse(174, 118, 22, 42, -0.28, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#b5926e';
+            ctx.beginPath();
+            ctx.arc(128, 128, 50, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#111827';
+            ctx.beginPath();
+            ctx.arc(108, 116, 7, 0, Math.PI * 2);
+            ctx.arc(148, 116, 7, 0, Math.PI * 2);
+            ctx.arc(128, 138, 11, 0, Math.PI * 2);
+            ctx.fill();
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createTvCanvasTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512; c.height = 288;
+            const ctx = c.getContext('2d');
+            const tex = new THREE.CanvasTexture(c);
+            return { canvas: c, ctx, tex };
+        }
+
+        /*************************************************************************
+         * 3. THREE.JS WIDE-ANGLE SCENE & EXACT LIVING ROOM GEOMETRY
+         *************************************************************************/
+        const container = document.getElementById('canvasContainer');
+        const overlay3DLabels = document.getElementById('overlay3DLabels');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111520);
+        scene.fog = new THREE.FogExp2(0x161b28, 0.012);
+
+        // WIDE-ANGLE 75° FOV CAMERA so the ENTIRE room (Sofa + Window + Washing machine + TV unit + Dining table) is visible at once!
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.22;
+        container.appendChild(renderer.domElement);
+
+        const roomGroup = new THREE.Group();
+        scene.add(roomGroup);
+
+        // Shared Materials
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xf6f5f0, roughness: 0.82 });
+        const ceilingMat = new THREE.MeshStandardMaterial({ color: 0xfcfbf9, roughness: 0.88 });
+        const floorMat = new THREE.MeshStandardMaterial({
+            map: createLightOakFloorTexture(),
+            roughness: 0.36,
+            metalness: 0.06
+        });
+        const walnutTex = createWalnutWoodTexture();
+        const walnutMat = new THREE.MeshStandardMaterial({ map: walnutTex, roughness: 0.42 });
+        const whitePanelMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.22 });
+
+        const zebraNormalTex = createZebraBlindsTexture(false);
+        const zebraUpsideTex = createZebraBlindsTexture(true);
+        const blindsMat = new THREE.MeshStandardMaterial({
+            map: zebraNormalTex,
+            roughness: 0.65,
+            emissive: new THREE.Color(0x2e1d0f),
+            emissiveIntensity: 0.28
+        });
+
+        const tvScreenData = createTvCanvasTexture();
+        const tvScreenMat = new THREE.MeshBasicMaterial({ map: tvScreenData.tex });
+
+        let saltLampMesh = null;
+        let saltLampLight = null;
+        let ceilingSpotLights = [];
+        const vinesGroup = new THREE.Group();
+        vinesGroup.visible = false;
+        roomGroup.add(vinesGroup);
+
+        function buildFull3DLivingRoom() {
+            // Room Proportions calibrated so everything fits in a single wide-angle view from the doorway:
+            // Width X: -3.5m (Left window wall) to +3.5m (Right TV wall)
+            // Height Y: 0m (Oak floor) to 2.75m (Ceiling)
+            // Depth Z: +4.6m (Foreground entrance) to -4.8m (Back dining window wall)
+
+            // 1. LIGHT OAK FLOOR & BASEBOARDS
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 9.8), floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            roomGroup.add(floor);
+
+            const baseboardMat = new THREE.MeshStandardMaterial({ color: 0xa3825c, roughness: 0.5 });
+            const leftBase = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 9.8), baseboardMat);
+            leftBase.position.set(-3.48, 0.04, 0);
+            roomGroup.add(leftBase);
+
+            // 2. CEILING & WALLS
+            const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 9.8), ceilingMat);
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.y = 2.75;
+            roomGroup.add(ceiling);
+
+            // Left Wall (behind washing machine & 4-panel window)
+            const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(9.8, 2.75), wallMat);
+            leftWall.rotation.y = Math.PI / 2;
+            leftWall.position.set(-3.5, 1.375, 0);
+            leftWall.receiveShadow = true;
+            roomGroup.add(leftWall);
+
+            // Back Wall (behind dining table & 3-panel window)
+            const backWall = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 2.75), wallMat);
+            backWall.position.set(0, 1.375, -4.8);
+            backWall.receiveShadow = true;
+            roomGroup.add(backWall);
+
+            // Square White Air Vent high on the back wall (clearly visible in both photos to the left of the back window!)
+            const airVent = new THREE.Mesh(
+                new THREE.BoxGeometry(0.28, 0.28, 0.04),
+                new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.4 })
+            );
+            airVent.position.set(-1.75, 2.18, -4.77);
+            roomGroup.add(airVent);
+
+            // Right TV Wall (Protruding slightly forward from the kitchen/fridge alcove in back-right, just like Photo 2!)
+            const rightTvWall = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.75, 6.8), wallMat);
+            rightTvWall.position.set(3.25, 1.375, 1.5);
+            rightTvWall.castShadow = true;
+            rightTvWall.receiveShadow = true;
+            roomGroup.add(rightTvWall);
+
+            // Kitchen/Fridge Alcove Right Wall
+            const alcoveWall = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.75), wallMat);
+            alcoveWall.rotation.y = -Math.PI / 2;
+            alcoveWall.position.set(3.52, 1.375, -3.3);
+            roomGroup.add(alcoveWall);
+
+            // 3. FRONT-LEFT BY ENTRANCE: SPOTLESS WHITE BEKO WASHING MACHINE (No clothes on top, no pink mat!)
+            const washerGroup = new THREE.Group();
+            washerGroup.position.set(-2.98, 0, 3.15);
+
+            const washerBody = new THREE.Mesh(
+                new THREE.BoxGeometry(0.66, 0.88, 0.64),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.08 })
+            );
+            washerBody.position.y = 0.44;
+            washerBody.castShadow = true;
+            washerBody.receiveShadow = true;
+            washerGroup.add(washerBody);
+
+            // Top control panel + detergent drawer line + black/silver dial
+            const washerPanel = new THREE.Mesh(
+                new THREE.BoxGeometry(0.67, 0.13, 0.62),
+                new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.3 })
+            );
+            washerPanel.position.set(0.01, 0.80, 0);
+            washerGroup.add(washerPanel);
+
+            const washerDial = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.035, 0.035, 0.03, 18),
+                new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6 })
+            );
+            washerDial.rotation.z = Math.PI / 2;
+            washerDial.position.set(0.34, 0.80, 0);
+            washerGroup.add(washerDial);
+
+            // Iconic Black & Silver Front Drum Door facing right (+X into the room, clearly visible!)
+            const drumBezel = new THREE.Mesh(
+                new THREE.TorusGeometry(0.22, 0.038, 16, 36),
+                new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.85, roughness: 0.18 })
+            );
+            drumBezel.rotation.y = Math.PI / 2;
+            drumBezel.position.set(0.34, 0.42, 0);
+            washerGroup.add(drumBezel);
+
+            const drumGlass = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.21, 0.21, 0.04, 32),
+                new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.08, metalness: 0.8 })
+            );
+            drumGlass.rotation.z = Math.PI / 2;
+            drumGlass.position.set(0.33, 0.42, 0);
+            washerGroup.add(drumGlass);
+
+            roomGroup.add(washerGroup);
+
+            // 4. LEFT WALL: 4-PANEL HORIZONTAL WINDOW WITH DAY/NIGHT BLINDS & WINDOWSILL ITEMS
+            const leftWinGroup = new THREE.Group();
+            leftWinGroup.position.set(-3.44, 1.68, 0.55);
+
+            const winOuterFrame = new THREE.Mesh(
+                new THREE.BoxGeometry(0.12, 1.42, 3.85),
+                whitePanelMat
+            );
+            leftWinGroup.add(winOuterFrame);
+
+            for (let i = 0; i < 4; i++) {
+                const zOff = -1.38 + i * 0.92;
+                const blindMesh = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.24, 0.82), blindsMat);
+                blindMesh.position.set(0.05, 0.02, zOff);
+                leftWinGroup.add(blindMesh);
+
+                if (i < 3) {
+                    const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.13, 1.38, 0.06), whitePanelMat);
+                    mullion.position.set(0.01, 0, zOff + 0.46);
+                    leftWinGroup.add(mullion);
+                }
+            }
+
+            // White Windowsill (Parapet)
+            const sill = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 4.0), whitePanelMat);
+            sill.position.set(0.12, -0.71, 0);
+            sill.receiveShadow = true;
+            leftWinGroup.add(sill);
+
+            // Glowing Orange Himalayan Salt Lamp on Windowsill
+            saltLampMesh = new THREE.Mesh(
+                new THREE.DodecahedronGeometry(0.14, 1),
+                new THREE.MeshStandardMaterial({
+                    color: 0xff6b1a,
+                    emissive: 0xff5500,
+                    emissiveIntensity: 1.6,
+                    roughness: 0.35
+                })
+            );
+            saltLampMesh.scale.set(0.88, 1.3, 0.88);
+            saltLampMesh.position.set(0.15, -0.55, -0.52);
+            leftWinGroup.add(saltLampMesh);
+
+            saltLampLight = new THREE.PointLight(0xff7b29, 1.35, 4.8);
+            saltLampLight.position.set(-3.1, 1.22, 0.05);
+            roomGroup.add(saltLampLight);
+
+            // White Aroma Diffuser & Wicker Basket next to Salt Lamp
+            const diffuser = new THREE.Mesh(
+                new THREE.SphereGeometry(0.085, 16, 16),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 })
+            );
+            diffuser.position.set(0.15, -0.61, -0.92);
+            leftWinGroup.add(diffuser);
+
+            const basket = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.13, 0.10, 0.15, 16),
+                new THREE.MeshStandardMaterial({ color: 0xa68458, roughness: 0.85 })
+            );
+            basket.position.set(0.15, -0.61, -1.36);
+            leftWinGroup.add(basket);
+
+            roomGroup.add(leftWinGroup);
+
+            // 5. ENTIRE DARK FOREST-GREEN VELVET U-SHAPED SECTIONAL SOFA (Spotless!)
+            const sofaGroup = new THREE.Group();
+            const darkGreenVelvet = new THREE.MeshStandardMaterial({
+                color: 0x0b291e,
+                roughness: 0.78,
+                metalness: 0.05
+            });
+            const seatGreenVelvet = new THREE.MeshStandardMaterial({
+                color: 0x103628,
+                roughness: 0.74,
+                metalness: 0.05
+            });
+
+            // Main Sofa Spine along left window wall
+            const sofaSpine = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.42, 3.95), darkGreenVelvet);
+            sofaSpine.position.set(-2.85, 0.21, 0.52);
+            sofaSpine.castShadow = true;
+            sofaSpine.receiveShadow = true;
+            sofaGroup.add(sofaSpine);
+
+            const sofaBack = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.50, 3.95), darkGreenVelvet);
+            sofaBack.position.set(-3.22, 0.65, 0.52);
+            sofaBack.castShadow = true;
+            sofaGroup.add(sofaBack);
+
+            // 4 Plush Back Cushions along the window wall
+            for (let c = 0; c < 4; c++) {
+                const cush = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.44, 0.92), seatGreenVelvet);
+                cush.position.set(-3.02, 0.64, 1.96 - c * 0.95);
+                cush.rotation.z = -0.12;
+                cush.castShadow = true;
+                sofaGroup.add(cush);
+            }
+
+            // Front Chaise Lounge extending towards center of room (right next to washing machine)
+            const frontChaise = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.42, 1.18), seatGreenVelvet);
+            frontChaise.position.set(-2.25, 0.21, 1.92);
+            frontChaise.castShadow = true;
+            frontChaise.receiveShadow = true;
+            sofaGroup.add(frontChaise);
+
+            // Front Armrest next to Washing Machine
+            const frontArm = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.62, 0.24), darkGreenVelvet);
+            frontArm.position.set(-2.62, 0.31, 2.54);
+            frontArm.castShadow = true;
+            sofaGroup.add(frontArm);
+
+            // Back Chaise Lounge extending towards center of room
+            const backChaise = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.42, 1.12), seatGreenVelvet);
+            backChaise.position.set(-2.32, 0.21, -0.88);
+            backChaise.castShadow = true;
+            backChaise.receiveShadow = true;
+            sofaGroup.add(backChaise);
+
+            // White cylindrical pouf/bucket tucked by the back chaise (visible in both photos!)
+            const whitePouf = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.18, 0.16, 0.32, 20),
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 })
+            );
+            whitePouf.position.set(-1.95, 0.16, -1.62);
+            sofaGroup.add(whitePouf);
+
+            // Bright Lime-Green Monster Pillow on Front-Left Chaise
+            const greenPillow = new THREE.Mesh(
+                new THREE.BoxGeometry(0.54, 0.15, 0.54),
+                new THREE.MeshStandardMaterial({ map: createGreenMonsterPillowTexture(), roughness: 0.6 })
+            );
+            greenPillow.position.set(-2.72, 0.50, 2.08);
+            greenPillow.rotation.set(0.25, 0.35, -0.32);
+            greenPillow.castShadow = true;
+            sofaGroup.add(greenPillow);
+
+            // Dog-Print Cushion on Back Chaise Corner
+            const dogPillow = new THREE.Mesh(
+                new THREE.BoxGeometry(0.48, 0.15, 0.48),
+                new THREE.MeshStandardMaterial({ map: createDogPrintPillowTexture(), roughness: 0.65 })
+            );
+            dogPillow.position.set(-2.82, 0.50, -1.12);
+            dogPillow.rotation.set(-0.22, 0.4, -0.28);
+            dogPillow.castShadow = true;
+            sofaGroup.add(dogPillow);
+
+            roomGroup.add(sofaGroup);
+
+            // 6. CENTER OF ROOM: TWO NESTING SQUARE COFFEE TABLES (Oak tops + black metal frames)
+            const tablesGroup = new THREE.Group();
+            tablesGroup.position.set(-0.25, 0, 0.85);
+
+            const oakTopMat = new THREE.MeshStandardMaterial({ color: 0xc89f6d, roughness: 0.38 });
+            const blackFrameMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.7, roughness: 0.3 });
+
+            // Taller Back Coffee Table
+            const highTop = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.038, 0.64), oakTopMat);
+            highTop.position.set(0, 0.48, -0.22);
+            highTop.castShadow = true;
+            highTop.receiveShadow = true;
+            tablesGroup.add(highTop);
+
+            [[-0.30, -0.52], [0.30, -0.52], [-0.30, 0.08], [0.30, 0.08]].forEach(([lx, lz]) => {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.48, 8), blackFrameMat);
+                leg.position.set(lx, 0.24, lz);
+                tablesGroup.add(leg);
+            });
+
+            // Lower Front Nested Coffee Table
+            const lowTop = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.038, 0.56), oakTopMat);
+            lowTop.position.set(-0.04, 0.40, 0.25);
+            lowTop.castShadow = true;
+            lowTop.receiveShadow = true;
+            tablesGroup.add(lowTop);
+
+            [[-0.30, -0.01], [0.22, -0.01], [-0.30, 0.51], [0.22, 0.51]].forEach(([lx, lz]) => {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.40, 8), blackFrameMat);
+                leg.position.set(lx, 0.20, lz);
+                tablesGroup.add(leg);
+            });
+
+            // Remote control & tissue box neatly arranged
+            const remote = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.20), blackFrameMat);
+            remote.position.set(-0.04, 0.43, 0.26);
+            remote.rotation.y = 0.2;
+            tablesGroup.add(remote);
+
+            const tissues = new THREE.Mesh(
+                new THREE.BoxGeometry(0.15, 0.09, 0.24),
+                new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.4 })
+            );
+            tissues.position.set(0.08, 0.54, -0.22);
+            tablesGroup.add(tissues);
+
+            roomGroup.add(tablesGroup);
+
+            // 7. RIGHT WALL: COMPLETE WALNUT & WHITE TV MEDIA UNIT + LARGE BLACK FLAT-SCREEN TV
+            // Placed clearly along X = +2.65 so the entire TV & both cabinets are 100% visible in the default view!
+
+            // 7a. Foreground Right Walnut Cabinet with White Vertical Strip (Clean top!)
+            const frontCabinet = new THREE.Group();
+            frontCabinet.position.set(2.65, 0, 2.45);
+            const fCabMesh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.06, 0.94), walnutMat);
+            fCabMesh.position.y = 0.53;
+            fCabMesh.castShadow = true;
+            fCabMesh.receiveShadow = true;
+            frontCabinet.add(fCabMesh);
+
+            const fCabWhite = new THREE.Mesh(new THREE.BoxGeometry(0.025, 1.04, 0.24), whitePanelMat);
+            fCabWhite.position.set(-0.295, 0.53, -0.32);
+            frontCabinet.add(fCabWhite);
+            roomGroup.add(frontCabinet);
+
+            // 7b. Long Low Walnut & White TV Bench in the Middle
+            const tvBench = new THREE.Group();
+            tvBench.position.set(2.68, 0, 0.55);
+            const benchBody = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.45, 2.45), walnutMat);
+            benchBody.position.y = 0.225;
+            benchBody.castShadow = true;
+            benchBody.receiveShadow = true;
+            tvBench.add(benchBody);
+
+            // White drawer front on the left half of the TV bench + open shelf on the right half (exact match to Photo 2!)
+            const benchWhiteDrawer = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.22, 1.18), whitePanelMat);
+            benchWhiteDrawer.position.set(-0.275, 0.25, -0.58);
+            tvBench.add(benchWhiteDrawer);
+
+            const openShelfSlot = new THREE.Mesh(
+                new THREE.BoxGeometry(0.03, 0.18, 1.05),
+                new THREE.MeshStandardMaterial({ color: 0x1e130c, roughness: 0.8 })
+            );
+            openShelfSlot.position.set(-0.272, 0.26, 0.58);
+            tvBench.add(openShelfSlot);
+            roomGroup.add(tvBench);
+
+            // 7c. LARGE PROMINENT BLACK FLAT-SCREEN TV ON THE TV BENCH
+            const tvUnitGroup = new THREE.Group();
+            tvUnitGroup.position.set(2.66, 0.98, 0.55);
+            // Slightly angled (-8 deg) toward the living room center so the screen is super clear from the entrance!
+            tvUnitGroup.rotation.y = -0.12;
+
+            const tvFrame = new THREE.Mesh(
+                new THREE.BoxGeometry(0.07, 0.96, 1.68),
+                new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.18, metalness: 0.75 })
+            );
+            tvFrame.castShadow = true;
+            tvUnitGroup.add(tvFrame);
+
+            // Glowing Rim around TV so it stands out against the white wall
+            const tvScreenPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.60, 0.88), tvScreenMat);
+            tvScreenPlane.rotation.y = -Math.PI / 2;
+            tvScreenPlane.position.x = -0.038;
+            tvUnitGroup.add(tvScreenPlane);
+
+            // TV Stand Base
+            const tvPedestal = new THREE.Mesh(
+                new THREE.BoxGeometry(0.28, 0.08, 0.55),
+                new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8 })
+            );
+            tvPedestal.position.set(0, -0.50, 0);
+            tvUnitGroup.add(tvPedestal);
+
+            roomGroup.add(tvUnitGroup);
+
+            // 7d. Back Walnut & White Cabinet (between TV bench and dining/fridge area)
+            const backCabinet = new THREE.Group();
+            backCabinet.position.set(2.65, 0, -1.18);
+            const bCabMesh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.06, 0.88), walnutMat);
+            bCabMesh.position.y = 0.53;
+            bCabMesh.castShadow = true;
+            bCabMesh.receiveShadow = true;
+            backCabinet.add(bCabMesh);
+
+            const bCabWhite = new THREE.Mesh(new THREE.BoxGeometry(0.025, 1.04, 0.24), whitePanelMat);
+            bCabWhite.position.set(-0.295, 0.53, -0.28);
+            backCabinet.add(bCabWhite);
+            roomGroup.add(backCabinet);
+
+            // 8. BACK DINING NOOK: 3-PANEL WINDOW WITH ZEBRA BLINDS, RADIATOR, WOODEN DINING TABLE & FRIDGE
+            const backWinGroup = new THREE.Group();
+            backWinGroup.position.set(0.15, 1.72, -4.74);
+            const bWinFrame = new THREE.Mesh(new THREE.BoxGeometry(2.85, 1.32, 0.10), whitePanelMat);
+            backWinGroup.add(bWinFrame);
+
+            for (let b = 0; b < 3; b++) {
+                const bx = -0.90 + b * 0.90;
+                const bPane = new THREE.Mesh(new THREE.BoxGeometry(0.80, 1.16, 0.04), blindsMat);
+                bPane.position.set(bx, 0, 0.04);
+                backWinGroup.add(bPane);
+            }
+            roomGroup.add(backWinGroup);
+
+            // White Radiator under Back Window
+            const radiator = new THREE.Mesh(
+                new THREE.BoxGeometry(1.45, 0.58, 0.10),
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 })
+            );
+            radiator.position.set(0.25, 0.45, -4.68);
+            roomGroup.add(radiator);
+
+            // Wooden Dining Table & 2 Dark Grey Chairs
+            const diningGroup = new THREE.Group();
+            diningGroup.position.set(-0.55, 0, -3.75);
+            const dTop = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.04, 0.82), oakTopMat);
+            dTop.position.y = 0.76;
+            dTop.castShadow = true;
+            dTop.receiveShadow = true;
+            diningGroup.add(dTop);
+
+            [[-0.55, -0.35], [0.55, -0.35], [-0.55, 0.35], [0.55, 0.35]].forEach(([lx, lz]) => {
+                const dLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.015, 0.76, 10), blackFrameMat);
+                dLeg.position.set(lx, 0.38, lz);
+                diningGroup.add(dLeg);
+            });
+
+            [-0.78, 0.78].forEach((cx, idx) => {
+                const chair = new THREE.Group();
+                chair.position.set(cx, 0, 0);
+                chair.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
+                const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.04, 0.46), blackFrameMat);
+                seat.position.y = 0.45;
+                chair.add(seat);
+                const back = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.42, 0.04), blackFrameMat);
+                back.position.set(0, 0.66, -0.21);
+                chair.add(back);
+                diningGroup.add(chair);
+            });
+            roomGroup.add(diningGroup);
+
+            // Tall Dark-Grey Fridge in Back-Right Alcove with Colorful Magnets
+            const fridgeGroup = new THREE.Group();
+            fridgeGroup.position.set(2.85, 0, -2.95);
+            const fridgeBody = new THREE.Mesh(
+                new THREE.BoxGeometry(0.75, 1.98, 0.75),
+                new THREE.MeshStandardMaterial({ color: 0x27272a, metalness: 0.55, roughness: 0.32 })
+            );
+            fridgeBody.position.y = 0.99;
+            fridgeBody.castShadow = true;
+            fridgeGroup.add(fridgeBody);
+
+            const magCols = [0xff1e27, 0xfacc15, 0x38bdf8, 0x4ade80, 0xf472b6, 0xffffff];
+            for (let m = 0; m < 12; m++) {
+                const mag = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.015, 0.08, 0.11),
+                    new THREE.MeshBasicMaterial({ color: magCols[m % magCols.length] })
+                );
+                mag.position.set(-0.38, 1.10 + (m % 6) * 0.13, -0.18 + Math.floor(m / 6) * 0.28);
+                fridgeGroup.add(mag);
+            }
+            roomGroup.add(fridgeGroup);
+
+            // 9. TWO SILVER 4-SPOT TRACK LIGHT FIXTURES ON CEILING
+            const chromeMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.15 });
+            [1.35, -2.35].forEach((zPos) => {
+                const railGroup = new THREE.Group();
+                railGroup.position.set(-0.10, 2.71, zPos);
+                railGroup.rotation.y = 0.32;
+
+                const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.96, 12), chromeMat);
+                bar.rotation.z = Math.PI / 2;
+                railGroup.add(bar);
+
+                for (let s = 0; s < 4; s++) {
+                    const sx = -0.39 + s * 0.26;
+                    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.13, 16), chromeMat);
+                    cyl.position.set(sx, -0.07, 0);
+                    cyl.rotation.z = (s - 1.5) * 0.22;
+                    railGroup.add(cyl);
+
+                    const bulb = new THREE.Mesh(
+                        new THREE.CircleGeometry(0.03, 12),
+                        new THREE.MeshBasicMaterial({ color: 0xfffae0 })
+                    );
+                    bulb.rotation.x = Math.PI / 2;
+                    bulb.position.set(sx, -0.136, 0);
+                    railGroup.add(bulb);
+                }
+                roomGroup.add(railGroup);
+
+                const pLight = new THREE.PointLight(0xfff5db, 1.25, 13);
+                pLight.position.set(-0.10, 2.48, zPos);
+                pLight.castShadow = true;
+                pLight.shadow.bias = -0.002;
+                roomGroup.add(pLight);
+                ceilingSpotLights.push(pLight);
+            });
+
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0xc19f74, 0.65);
+            roomGroup.add(hemiLight);
+            state.hemiLight = hemiLight;
+
+            // 10. UPSIDE DOWN 3D ORGANIC DARK VINES / TENDRILS ACROSS WALLS, TV UNIT & FLOOR
+            const vineMat = new THREE.MeshStandardMaterial({
+                color: 0x16060e,
+                roughness: 0.85,
+                metalness: 0.15,
+                emissive: 0x3b0714,
+                emissiveIntensity: 0.4
+            });
+            for (let v = 0; v < 32; v++) {
+                const pts = [];
+                const side = v % 4;
+                const bx = side === 0 ? -3.38 : (side === 1 ? 2.55 : (Math.random() - 0.5) * 5.2);
+                const bz = (Math.random() - 0.5) * 7.8;
+                const by = side === 2 ? 0.06 : Math.random() * 2.4;
+
+                for (let p = 0; p < 6; p++) {
+                    pts.push(new THREE.Vector3(
+                        bx + Math.sin(p + v) * 0.45,
+                        side === 2 ? 0.05 : Math.max(0.05, by - p * 0.35),
+                        bz + Math.cos(p * 0.9 + v) * 0.55
+                    ));
+                }
+                const curve = new THREE.CatmullRomCurve3(pts);
+                const tubeGeo = new THREE.TubeGeometry(curve, 18, 0.038 + (v % 3) * 0.018, 8, false);
+                vinesGroup.add(new THREE.Mesh(tubeGeo, vineMat));
+            }
+        }
+
+        /*************************************************************************
+         * 4. WIDE-ANGLE CAMERA PRESETS (SO EVERYTHING IS VISIBLE AT ONCE!)
+         *************************************************************************/
+        const CAMERA_PRESETS = {
+            // 1: DEFAULT WIDE FULL-ROOM VIEW: Shows Washing Machine + Whole Green U-Sofa + 4-Panel Window + Coffee Tables + Full TV Media Unit + Dining Nook all together!
+            1: {
+                pos: new THREE.Vector3(-0.35, 1.92, 4.48),
+                look: new THREE.Vector3(-0.10, 0.78, -0.45)
+            },
+            // 2: Photo 1 Angle (From entrance doorway looking across Washing Machine, Sofa, Window & Front Cabinet)
+            2: {
+                pos: new THREE.Vector3(-1.45, 1.88, 4.35),
+                look: new THREE.Vector3(-0.20, 0.78, -0.55)
+            },
+            // 3: Photo 2 Angle (Looking down the living room toward TV unit, Sofa, Coffee tables & Dining table)
+            3: {
+                pos: new THREE.Vector3(-0.85, 1.82, 3.85),
+                look: new THREE.Vector3(0.35, 0.82, -1.65)
+            }
+        };
+
+        let camState = {
+            preset: 1,
+            currentPos: CAMERA_PRESETS[1].pos.clone(),
+            currentLook: CAMERA_PRESETS[1].look.clone(),
+            yawOffset: 0,
+            pitchOffset: 0,
+            isDragging: false,
+            dragStartX: 0,
+            dragStartY: 0,
+            rollAngle: 0,
+            targetRollAngle: 0,
+            keepInvertedInUpsideDown: false,
+            shakeIntensity: 0
+        };
+
+        function setCameraPreset(num) {
+            camState.preset = num;
+            camState.yawOffset = 0;
+            camState.pitchOffset = 0;
+            [1, 2, 3].forEach(i => {
+                document.getElementById(`camBtn${i}`).classList.toggle('cam-btn-active', i === num);
+            });
+        }
+
+        function togglePersistentUpsideDownCamera() {
+            camState.keepInvertedInUpsideDown = !camState.keepInvertedInUpsideDown;
+            camState.targetRollAngle = camState.keepInvertedInUpsideDown ? Math.PI : 0;
+        }
+
+        /*************************************************************************
+         * 5. DETAILED BIPEDAL 3D DEMOGORGON BUILDER (NO DOGS! ONLY DEMOGORGONS!)
+         *************************************************************************/
+        const DEMOGORGON_STAGES = {
+            1: {
+                name: "Mladý Demogorgon",
+                scale: 1.0,
+                hp: 2,
+                speed: 0.022,
+                pts: 150,
+                skinColor: 0x6e474b,
+                veinEmissive: 0x2a080c
+            },
+            2: {
+                name: "Dospelý Demogorgon",
+                scale: 1.45,
+                hp: 5,
+                speed: 0.019,
+                pts: 260,
+                skinColor: 0x5c3438,
+                veinEmissive: 0x4a0b13
+            },
+            3: {
+                name: "Alfa Demogorgon",
+                scale: 1.95,
+                hp: 9,
+                speed: 0.016,
+                pts: 420,
+                skinColor: 0x471d22,
+                veinEmissive: 0x990f24
+            },
+            4: {
+                name: "Kolosálny Mega-Demogorgon",
+                scale: 2.6,
+                hp: 16,
+                speed: 0.013,
+                pts: 750,
+                skinColor: 0x330d12,
+                veinEmissive: 0xff1e27
+            }
+        };
+
+        function createBipedalDemogorgonMesh(stageCfg, stageNum) {
+            const group = new THREE.Group();
+
+            const skinMat = new THREE.MeshStandardMaterial({
+                color: stageCfg.skinColor,
+                roughness: 0.32, // Slimy wet look
+                metalness: 0.18,
+                emissive: stageCfg.veinEmissive,
+                emissiveIntensity: stageNum >= 3 ? 0.65 : 0.25
+            });
+
+            // 1. Hunched Muscular Humanoid Torso & Ribcage
+            const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.11, 0.46, 12), skinMat);
+            chest.position.set(0, 0.68, 0.04);
+            chest.rotation.x = 0.22;
+            chest.castShadow = true;
+            group.add(chest);
+
+            const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 10), skinMat);
+            pelvis.position.set(0, 0.44, 0);
+            group.add(pelvis);
+
+            // Glowing red veins on Alfa & Mega Demogorgon
+            if (stageNum >= 3) {
+                const veinMat = new THREE.MeshBasicMaterial({ color: 0xff1e27, wireframe: true });
+                const veinCage = new THREE.Mesh(new THREE.CylinderGeometry(0.168, 0.118, 0.45, 8), veinMat);
+                veinCage.position.copy(chest.position);
+                veinCage.rotation.copy(chest.rotation);
+                group.add(veinCage);
+            }
+
+            // 2. Digitigrade Humanoid Legs (Left & Right Pivots for walking animation)
+            const leftLegPivot = new THREE.Group();
+            leftLegPivot.position.set(-0.09, 0.44, 0);
+            const thighL = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.042, 0.26, 10), skinMat);
+            thighL.position.set(0, -0.12, 0.03);
+            thighL.rotation.x = -0.25;
+            const shinL = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.028, 0.26, 10), skinMat);
+            shinL.position.set(0, -0.32, -0.02);
+            shinL.rotation.x = 0.2;
+            leftLegPivot.add(thighL, shinL);
+            group.add(leftLegPivot);
+
+            const rightLegPivot = new THREE.Group();
+            rightLegPivot.position.set(0.09, 0.44, 0);
+            const thighR = thighL.clone();
+            const shinR = shinL.clone();
+            rightLegPivot.add(thighR, shinR);
+            group.add(rightLegPivot);
+
+            // 3. Long Predatory Arms & Sharp Claws
+            const leftArmPivot = new THREE.Group();
+            leftArmPivot.position.set(-0.19, 0.84, 0.06);
+            const upperArmL = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.035, 0.30, 10), skinMat);
+            upperArmL.position.set(-0.03, -0.13, 0.06);
+            upperArmL.rotation.x = 0.45;
+            upperArmL.rotation.z = 0.22;
+            const forearmL = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.28, 10), skinMat);
+            forearmL.position.set(-0.06, -0.30, 0.18);
+            forearmL.rotation.x = 0.85;
+            leftArmPivot.add(upperArmL, forearmL);
+
+            // 4 Long Claws on Left Hand
+            const clawMat = new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.2 });
+            for (let c = -1; c <= 1; c++) {
+                const claw = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.09, 6), clawMat);
+                claw.position.set(-0.06 + c * 0.022, -0.39, 0.29);
+                claw.rotation.x = 1.3;
+                leftArmPivot.add(claw);
+            }
+            group.add(leftArmPivot);
+
+            const rightArmPivot = new THREE.Group();
+            rightArmPivot.position.set(0.19, 0.84, 0.06);
+            const upperArmR = upperArmL.clone();
+            upperArmR.position.x = 0.03;
+            upperArmR.rotation.z = -0.22;
+            const forearmR = forearmL.clone();
+            forearmR.position.x = 0.06;
+            rightArmPivot.add(upperArmR, forearmR);
+            for (let c = -1; c <= 1; c++) {
+                const claw = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.09, 6), clawMat);
+                claw.position.set(0.06 + c * 0.022, -0.39, 0.29);
+                claw.rotation.x = 1.3;
+                rightArmPivot.add(claw);
+            }
+            group.add(rightArmPivot);
+
+            // 4. ICONIC 5-PETAL DEMOGORGON FLOWER-HEAD WITH WHITE TEETH & CENTRAL MAW
+            const headGroup = new THREE.Group();
+            headGroup.position.set(0, 0.98, 0.10);
+
+            // Central dark throat maw
+            const maw = new THREE.Mesh(
+                new THREE.CircleGeometry(0.075, 16),
+                new THREE.MeshBasicMaterial({ color: 0x260207 })
+            );
+            maw.position.z = 0.03;
+            headGroup.add(maw);
+
+            // Inner ring of teeth around throat
+            const toothMat = new THREE.MeshBasicMaterial({ color: 0xfef3c7 });
+            for (let t = 0; t < 10; t++) {
+                const ta = (t / 10) * Math.PI * 2;
+                const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.01, 0.03, 5), toothMat);
+                tooth.position.set(Math.cos(ta) * 0.055, Math.sin(ta) * 0.055, 0.04);
+                tooth.rotation.x = -Math.PI / 2;
+                headGroup.add(tooth);
+            }
+
+            // 5 Fleshy Crimson Petals lined with teeth
+            const petalInnerMat = new THREE.MeshStandardMaterial({
+                color: 0xd91b42,
+                roughness: 0.28,
+                emissive: 0x6e081d,
+                emissiveIntensity: 0.55
+            });
+
+            const petals = [];
+            for (let p = 0; p < 5; p++) {
+                const petalPivot = new THREE.Group();
+                const angle = (p / 5) * Math.PI * 2;
+                petalPivot.rotation.z = angle;
+
+                const petalFlesh = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.23, 8), petalInnerMat);
+                petalFlesh.position.set(0, 0.11, 0.04);
+                petalFlesh.scale.set(1.0, 1.0, 0.35);
+                petalPivot.add(petalFlesh);
+
+                // Rows of sharp white teeth inside each petal!
+                for (let pt = 0; pt < 5; pt++) {
+                    const pTooth = new THREE.Mesh(new THREE.ConeGeometry(0.011, 0.035, 5), toothMat);
+                    pTooth.position.set((pt % 2 === 0 ? -0.025 : 0.025), 0.06 + pt * 0.032, 0.065);
+                    pTooth.rotation.x = Math.PI / 2;
+                    petalPivot.add(pTooth);
+                }
+
+                headGroup.add(petalPivot);
+                petals.push(petalFlesh);
+            }
+            group.add(headGroup);
+
+            return {
+                group,
+                skinMat,
+                petals,
+                leftLegPivot,
+                rightLegPivot,
+                leftArmPivot,
+                rightArmPivot
+            };
+        }
+
+        /*************************************************************************
+         * 6. GAME STATE, 3D RIFT COUNTDOWNS & GUARANTEED UPSIDE DOWN FLIP
+         *************************************************************************/
+        const state = {
+            running: false,
+            paused: true,
+            world: 'normal', // 'normal' or 'upsideDown'
+            flipping: false,
+            score: 0,
+            phaseScore: 0,
+            targetScore: 1000,
+            timeLeft: 50,
+            lives: 4,
+            maxLives: 4,
+            upsideStage: 1, // 1..4 (progressively bigger Demogorgons)
+            killsInStage: 0,
+            biggestMonsterName: "Mladý Demogorgon (1.0x)",
+            saltCooldown: 0,
+            arcCooldown: 0,
+            slowMoTimer: 0,
+            rifts: [],
+            monsters: [],
+            waffles: [],
+            beams3D: [],
+            lastRiftSpawn: 0,
+            lastMonsterSpawn: 0,
+            lastSecond: 0,
+            hemiLight: null
+        };
+
+        // 3D Rift Spawn Coordinates clearly visible in the Wide Living Room View
+        const RIFT_LOCATIONS_3D = [
+            { pos: new THREE.Vector3(-3.36, 1.62, 1.35), rotY: Math.PI / 2, label: "Žalúzie Deň/Noc" },
+            { pos: new THREE.Vector3(-3.36, 1.58, -0.25), rotY: Math.PI / 2, label: "Nad zeleným U-gaučom" },
+            { pos: new THREE.Vector3(2.85, 1.65, 0.55), rotY: -Math.PI / 2, label: "Stena nad TV" },
+            { pos: new THREE.Vector3(2.85, 1.55, 2.15), rotY: -Math.PI / 2, label: "Pri prednej komode" },
+            { pos: new THREE.Vector3(0.15, 1.65, -4.62), rotY: 0, label: "Zadné okno pri jedálni" },
+            { pos: new THREE.Vector3(-1.75, 1.55, -4.62), rotY: 0, label: "Zadná stena obývačky" }
+        ];
+
+        function spawn3DRift() {
+            const loc = RIFT_LOCATIONS_3D[Math.floor(Math.random() * RIFT_LOCATIONS_3D.length)];
+            const riftGroup = new THREE.Group();
+            riftGroup.position.copy(loc.pos);
+            riftGroup.position.x += (Math.random() - 0.5) * 0.15;
+            riftGroup.position.y += (Math.random() - 0.5) * 0.18;
+            riftGroup.rotation.y = loc.rotY;
+
+            // Glowing Dimensional Crack Core
+            const coreMesh = new THREE.Mesh(
+                new THREE.OctahedronGeometry(0.30, 2),
+                new THREE.MeshBasicMaterial({ color: 0xff1e27 })
+            );
+            coreMesh.scale.set(0.55, 1.75, 0.18);
+            riftGroup.add(coreMesh);
+
+            // Outer Pulsing Energy Halo
+            const haloMesh = new THREE.Mesh(
+                new THREE.TorusGeometry(0.38, 0.04, 12, 24),
+                new THREE.MeshBasicMaterial({ color: 0xff8800, wireframe: true })
+            );
+            haloMesh.scale.set(0.65, 1.5, 0.3);
+            riftGroup.add(haloMesh);
+
+            const rLight = new THREE.PointLight(0xff1e27, 1.35, 3.0);
+            rLight.position.z = 0.18;
+            riftGroup.add(rLight);
+
+            // Create 2D Screen-Space Countdown Badge directly over the 3D Rift!
+            const domBadge = document.createElement('div');
+            domBadge.className = "rift-tag flex flex-col items-center";
+            domBadge.innerHTML = `
+                <div class="px-2 py-0.5 rounded-full bg-red-950/90 border border-red-500 text-[10px] font-arcade font-bold text-red-200 shadow-lg whitespace-nowrap">
+                    ⚡ TRHLINA: <span class="rift-sec text-amber-300">8.0s</span>
+                </div>
+            `;
+            overlay3DLabels.appendChild(domBadge);
+
+            roomGroup.add(riftGroup);
+            state.rifts.push({
+                group: riftGroup,
+                core: coreMesh,
+                halo: haloMesh,
+                domBadge,
+                hp: 2,
+                maxSeconds: 8.5, // 8.5 seconds to close this rift before it flips the world to Upside Down!
+                remainingSeconds: 8.5
+            });
+        }
+
+        function spawn3DDemogorgon(forcedStage = null) {
+            const stNum = forcedStage || (state.world === 'normal' ? 1 : Math.min(4, state.upsideStage));
+            const cfg = DEMOGORGON_STAGES[stNum];
+            state.biggestMonsterName = `${cfg.name} (${cfg.scale}x)`;
+
+            const built = createBipedalDemogorgonMesh(cfg, stNum);
+            built.group.scale.setScalar(cfg.scale);
+
+            // Spawn in the back/middle of the living room and stalk toward the player
+            const spawnPts = [
+                new THREE.Vector3(-0.35, 0, -3.1),
+                new THREE.Vector3(1.15, 0, -2.5),
+                new THREE.Vector3(-1.15, 0, -1.5),
+                new THREE.Vector3(1.25, 0, -0.2)
+            ];
+            built.group.position.copy(spawnPts[Math.floor(Math.random() * spawnPts.length)]);
+            roomGroup.add(built.group);
+
+            // Floating Health Bar for Demogorgons
+            const domBar = document.createElement('div');
+            domBar.className = "monster-tag flex flex-col items-center";
+            domBar.innerHTML = `
+                <div class="text-[10px] font-arcade font-bold ${stNum >= 3 ? 'text-red-300' : 'text-amber-200'} bg-black/75 px-1.5 py-0.5 rounded border border-red-500/40 whitespace-nowrap mb-0.5">
+                    ${cfg.name} (${cfg.scale}x)
+                </div>
+                <div class="w-16 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-white/25">
+                    <div class="hp-fill h-full bg-gradient-to-r from-red-600 to-amber-400" style="width: 100%"></div>
+                </div>
+            `;
+            overlay3DLabels.appendChild(domBar);
+
+            if (stNum >= 3) {
+                camState.shakeIntensity = 0.18;
+                sfx.demogorgonRoar(cfg.scale);
+                spawnFloatingLabel(`⚠️ PRICHÁDZA ${cfg.name.toUpperCase()} (${cfg.scale}x)!`, window.innerWidth / 2, window.innerHeight * 0.28, "text-red-400 text-base sm:text-lg");
+            }
+
+            state.monsters.push({
+                ...built,
+                domBar,
+                hp: cfg.hp,
+                maxHp: cfg.hp,
+                speed: cfg.speed,
+                scale: cfg.scale,
+                pts: cfg.pts,
+                name: cfg.name,
+                stageNum: stNum,
+                walkPhase: Math.random() * Math.PI * 2,
+                targetPos: new THREE.Vector3(-0.35 + (Math.random() - 0.5) * 1.1, 0, 2.75)
+            });
+        }
+
+        function spawn3DWaffle() {
+            if (state.waffles.length > 0) return;
+            const wGroup = new THREE.Group();
+            const onTable = Math.random() < 0.6;
+            wGroup.position.set(onTable ? -0.25 : -2.25, onTable ? 0.56 : 0.52, onTable ? 0.85 : 1.92);
+
+            const waffleMesh = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.18, 0.18, 0.045, 20),
+                new THREE.MeshStandardMaterial({
+                    color: 0xfbbf24,
+                    emissive: 0xd97706,
+                    emissiveIntensity: 0.75,
+                    roughness: 0.35
+                })
+            );
+            wGroup.add(waffleMesh);
+
+            const wLight = new THREE.PointLight(0xfbbf24, 1.1, 2.2);
+            wLight.position.y = 0.2;
+            wGroup.add(wLight);
+
+            roomGroup.add(wGroup);
+            state.waffles.push({ group: wGroup, life: 480 });
+        }
+
+        /*************************************************************************
+         * 7. GUARANTEED 180-DEGREE UPSIDE DOWN WORLD FLIP ANIMATION
+         *************************************************************************/
+        function triggerWorldFlip3D(toWorld, reasonText) {
+            if (state.flipping) return;
+            state.flipping = true;
+            sfx.upsideDownThunder();
+            camState.shakeIntensity = 0.35;
+
+            const banner = document.getElementById('flipBanner');
+            const title = document.getElementById('flipBannerTitle');
+            const sub = document.getElementById('flipBannerSub');
+            const invertBtn = document.getElementById('invertToggleBtn');
+            banner.classList.remove('hidden');
+
+            // Flash red lightning
+            const lOverlay = document.getElementById('lightningOverlay');
+            lOverlay.style.backgroundColor = 'rgba(220, 38, 38, 0.45)';
+            setTimeout(() => { lOverlay.style.backgroundColor = 'rgba(220, 38, 38, 0)'; }, 260);
+
+            if (toWorld === 'upsideDown') {
+                title.textContent = "🌀 PREPAD DO UPSIDE DOWN!";
+                title.className = "font-stranger text-5xl sm:text-7xl text-red-500 tracking-widest drop-shadow-[0_0_30px_rgba(255,30,39,1)] text-center px-4";
+                sub.textContent = reasonText || "Trhlina sa pretrhla! Obývačka sa prevracia o 180° hore nohami!";
+                // Immediately rotate camera 180 degrees upside down!
+                camState.targetRollAngle = Math.PI;
+                invertBtn.classList.remove('hidden');
+            } else {
+                title.textContent = "✨ OBÝVAČKA ZACHRÁNENÁ!";
+                title.className = "font-stranger text-5xl sm:text-7xl text-emerald-400 tracking-widest drop-shadow-[0_0_30px_rgba(16,185,129,1)] text-center px-4";
+                sub.textContent = reasonText || "Porazil si obrovských Demogorgonov! Návrat do čistej obývačky!";
+                camState.targetRollAngle = 0;
+                camState.keepInvertedInUpsideDown = false;
+                invertBtn.classList.add('hidden');
+            }
+
+            setTimeout(() => {
+                clearDynamicEntities();
+                state.world = toWorld;
+
+                if (toWorld === 'upsideDown') {
+                    // Transform 3D Living Room into Dark Blue/Crimson Upside Down
+                    wallMat.color.setHex(0x141b2d);
+                    ceilingMat.color.setHex(0x0b0f1a);
+                    floorMat.color.setHex(0x3b4459);
+                    blindsMat.map = zebraUpsideTex;
+                    blindsMat.emissive.setHex(0xb91c1c);
+                    blindsMat.emissiveIntensity = 0.85;
+                    scene.fog.color.setHex(0x1a0610);
+                    scene.fog.density = 0.042;
+                    sporeMat.opacity = 0.82;
+                    sporeMat.color.setHex(0xfecdd3);
+                    vinesGroup.visible = true;
+
+                    ceilingSpotLights.forEach(l => {
+                        l.color.setHex(0xff2a4b);
+                        l.intensity = 0.9;
+                    });
+                    if (state.hemiLight) state.hemiLight.intensity = 0.28;
+
+                    state.upsideStage = 1;
+                    state.killsInStage = 0;
+                    state.timeLeft = 60;
+                    // Immediately spawn Demogorgons in Upside Down!
+                    spawn3DDemogorgon(1);
+                    spawn3DDemogorgon(1);
+                } else {
+                    // Restore Spotless Bright Living Room
+                    wallMat.color.setHex(0xf6f5f0);
+                    ceilingMat.color.setHex(0xfcfbf9);
+                    floorMat.color.setHex(0xffffff);
+                    blindsMat.map = zebraNormalTex;
+                    blindsMat.emissive.setHex(0x2e1d0f);
+                    blindsMat.emissiveIntensity = 0.28;
+                    scene.fog.color.setHex(0x161b28);
+                    scene.fog.density = 0.012;
+                    sporeMat.opacity = 0.16;
+                    sporeMat.color.setHex(0xdbeafe);
+                    vinesGroup.visible = false;
+
+                    ceilingSpotLights.forEach(l => {
+                        l.color.setHex(0xfff5db);
+                        l.intensity = 1.25;
+                    });
+                    if (state.hemiLight) state.hemiLight.intensity = 0.65;
+
+                    state.phaseScore = 0;
+                    state.targetScore += 250;
+                    state.timeLeft = 50;
+                }
+                blindsMat.needsUpdate = true;
+                updateHUD();
+            }, 950);
+
+            // After showing the full 180-degree inverted room for 1.8 seconds, complete the 360° roll so controls stay intuitive (unless player toggles 180° view)
+            setTimeout(() => {
+                if (toWorld === 'upsideDown' && !camState.keepInvertedInUpsideDown) {
+                    camState.targetRollAngle = Math.PI * 2;
+                }
+            }, 1900);
+
+            setTimeout(() => {
+                if (toWorld === 'upsideDown' && !camState.keepInvertedInUpsideDown) {
+                    camState.rollAngle = 0;
+                    camState.targetRollAngle = 0;
+                }
+                banner.classList.add('hidden');
+                state.flipping = false;
+            }, 2650);
+        }
+
+        function triggerUpsideDownFlipManual() {
+            document.getElementById('infoModal').classList.add('hidden');
+            state.running = true;
+            state.paused = false;
+            sfx.startMusic();
+            const next = state.world === 'normal' ? 'upsideDown' : 'normal';
+            triggerWorldFlip3D(
+                next,
+                next === 'upsideDown'
+                    ? "180° Prepad do Upside Down aktivovaný! Zlikviduj rastúcich Demogorgonov!"
+                    : "Návrat do čistej 3D obývačky!"
+            );
+        }
+
+        function clearDynamicEntities() {
+            state.rifts.forEach(r => {
+                roomGroup.remove(r.group);
+                if (r.domBadge) r.domBadge.remove();
+            });
+            state.monsters.forEach(m => {
+                roomGroup.remove(m.group);
+                if (m.domBar) m.domBar.remove();
+            });
+            state.waffles.forEach(w => roomGroup.remove(w.group));
+            state.rifts = [];
+            state.monsters = [];
+            state.waffles = [];
+        }
+
+        /*************************************************************************
+         * 8. SPORES / FLOATING ASH PARTICLES
+         *************************************************************************/
+        const sporeCount = 280;
+        const sporeGeo = new THREE.BufferGeometry();
+        const sporePos = new Float32Array(sporeCount * 3);
+        for (let i = 0; i < sporeCount; i++) {
+            sporePos[i * 3] = (Math.random() - 0.5) * 6.8;
+            sporePos[i * 3 + 1] = Math.random() * 2.65;
+            sporePos[i * 3 + 2] = (Math.random() - 0.5) * 8.8;
+        }
+        sporeGeo.setAttribute('position', new THREE.BufferAttribute(sporePos, 3));
+        const sporeMat = new THREE.PointsMaterial({
+            color: 0xdbeafe,
+            size: 0.045,
+            transparent: true,
+            opacity: 0.16
+        });
+        const sporePoints = new THREE.Points(sporeGeo, sporeMat);
+        roomGroup.add(sporePoints);
+
+        /*************************************************************************
+         * 9. RAYCASTING & TELEKINESIS COMBAT
+         *************************************************************************/
+        const raycaster = new THREE.Raycaster();
+        const mouseNDC = new THREE.Vector2();
+
+        function create3DBeam(startVec, endVec, hexColor = 0x00f0ff) {
+            const pts = [startVec.clone()];
+            const mid = startVec.clone().lerp(endVec, 0.5);
+            mid.x += (Math.random() - 0.5) * 0.25;
+            mid.y += (Math.random() - 0.5) * 0.25;
+            pts.push(mid, endVec.clone());
+
+            const curve = new THREE.CatmullRomCurve3(pts);
+            const geo = new THREE.TubeGeometry(curve, 8, 0.028, 6, false);
+            const mat = new THREE.MeshBasicMaterial({ color: hexColor });
+            const mesh = new THREE.Mesh(geo, mat);
+            roomGroup.add(mesh);
+            state.beams3D.push({ mesh, life: 10 });
+        }
+
+        function onPointerDown(e) {
+            if (!state.running || state.paused || state.flipping) return;
+            if (e.button === 2) {
+                camState.isDragging = true;
+                camState.dragStartX = e.clientX;
+                camState.dragStartY = e.clientY;
+                return;
+            }
+            sfx.init();
+
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            mouseNDC.x = (clientX / window.innerWidth) * 2 - 1;
+            mouseNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouseNDC, camera);
+
+            const beamOrigin = camera.position.clone().add(new THREE.Vector3(0, -0.25, -0.4));
+
+            // 1. Check 3D Eggo Waffle Hit
+            for (let i = state.waffles.length - 1; i >= 0; i--) {
+                const w = state.waffles[i];
+                if (raycaster.ray.distanceToPoint(w.group.position) < 0.48) {
+                    sfx.sealChime();
+                    create3DBeam(beamOrigin, w.group.position, 0xfbbf24);
+                    addGamePoints(250);
+                    state.slowMoTimer = 260;
+                    spawnFloatingLabel("🧇 EGGO VAFLA! +250 BODOV & SPOMALENIE!", clientX, clientY, "text-amber-300");
+                    roomGroup.remove(w.group);
+                    state.waffles.splice(i, 1);
+                    updateHUD();
+                    return;
+                }
+            }
+
+            // 2. Check Direct Click on Himalayan Salt Lamp
+            if (saltLampMesh) {
+                const lampWorldPos = new THREE.Vector3();
+                saltLampMesh.getWorldPosition(lampWorldPos);
+                if (raycaster.ray.distanceToPoint(lampWorldPos) < 0.42) {
+                    triggerSaltLampWave();
+                    return;
+                }
+            }
+
+            // 3. Check 3D Dimensional Rifts Hit
+            for (let i = state.rifts.length - 1; i >= 0; i--) {
+                const r = state.rifts[i];
+                if (raycaster.ray.distanceToPoint(r.group.position) < 0.72) {
+                    sfx.laser();
+                    create3DBeam(beamOrigin, r.group.position, 0x00f0ff);
+                    r.hp--;
+                    r.core.scale.multiplyScalar(0.78);
+                    if (r.hp <= 0) {
+                        sfx.sealChime();
+                        addGamePoints(160);
+                        spawnFloatingLabel("✨ TRHLINA ZATVORENÁ! +160", clientX, clientY, "text-cyan-300");
+                        roomGroup.remove(r.group);
+                        if (r.domBadge) r.domBadge.remove();
+                        state.rifts.splice(i, 1);
+                    } else {
+                        spawnFloatingLabel("Zatváram trhlinu... Ešte 1 klik!", clientX, clientY, "text-pink-300");
+                    }
+                    updateHUD();
+                    return;
+                }
+            }
+
+            // 4. Check Bipedal 3D Demogorgon Hit
+            for (let i = state.monsters.length - 1; i >= 0; i--) {
+                const m = state.monsters[i];
+                const hitCenter = m.group.position.clone().add(new THREE.Vector3(0, 0.55 * m.scale, 0));
+                if (raycaster.ray.distanceToPoint(hitCenter) < 0.62 * m.scale) {
+                    sfx.laser();
+                    create3DBeam(beamOrigin, hitCenter, 0xff1e27);
+                    m.hp--;
+                    m.skinMat.emissive.setHex(0xffffff);
+                    setTimeout(() => {
+                        if (m.skinMat) {
+                            m.skinMat.emissive.setHex(DEMOGORGON_STAGES[m.stageNum].veinEmissive);
+                        }
+                    }, 85);
+
+                    if (m.domBar) {
+                        const fill = m.domBar.querySelector('.hp-fill');
+                        if (fill) fill.style.width = `${Math.max(0, (m.hp / m.maxHp) * 100)}%`;
+                    }
+
+                    if (m.hp <= 0) {
+                        sfx.demogorgonRoar(m.scale);
+                        addGamePoints(m.pts);
+                        spawnFloatingLabel(`💥 ${m.name} PORAZENÝ! +${m.pts}`, clientX, clientY, "text-amber-300");
+                        roomGroup.remove(m.group);
+                        if (m.domBar) m.domBar.remove();
+                        state.monsters.splice(i, 1);
+
+                        if (state.world === 'upsideDown') {
+                            state.killsInStage++;
+                            // Escalate to BIGGER Demogorgons every 2 kills!
+                            if (state.killsInStage >= 2) {
+                                state.killsInStage = 0;
+                                if (state.upsideStage < 4) {
+                                    state.upsideStage++;
+                                    const nextCfg = DEMOGORGON_STAGES[state.upsideStage];
+                                    spawnFloatingLabel(`⬆️ FÁZA ${state.upsideStage}: ${nextCfg.name.toUpperCase()} (${nextCfg.scale}x)!`, window.innerWidth / 2, window.innerHeight * 0.34, "text-red-400 text-lg");
+                                    spawn3DDemogorgon(state.upsideStage);
+                                } else {
+                                    // Defeated Stage 4 Colossal Mega-Demogorgon -> Flip back to clean Original Living Room!
+                                    triggerWorldFlip3D('normal', "Porazil si Kolosálneho Mega-Demogorgona (2.6x)! Obývačka sa vracia do normálu!");
+                                }
+                            }
+                        }
+                    } else {
+                        spawnFloatingLabel(`Zásah Demogorgona! (${m.hp}/${m.maxHp})`, clientX, clientY, "text-red-300");
+                    }
+                    updateHUD();
+                    return;
+                }
+            }
+
+            // Missed shot visual beam
+            const missPoint = new THREE.Vector3();
+            raycaster.ray.at(6, missPoint);
+            sfx.laser();
+            create3DBeam(beamOrigin, missPoint, 0x38bdf8);
+        }
+
+        function triggerSaltLampWave() {
+            if (!state.running || state.paused || state.saltCooldown > 0) return;
+            state.saltCooldown = 12;
+            sfx.sealChime();
+            camState.shakeIntensity = 0.15;
+
+            const lampPos = new THREE.Vector3(-3.1, 1.22, 0.05);
+            state.rifts.forEach(r => {
+                create3DBeam(lampPos, r.group.position, 0xff7b00);
+                addGamePoints(140);
+                roomGroup.remove(r.group);
+                if (r.domBadge) r.domBadge.remove();
+            });
+            state.rifts = [];
+
+            state.monsters.forEach(m => {
+                const mc = m.group.position.clone().add(new THREE.Vector3(0, 0.55 * m.scale, 0));
+                create3DBeam(lampPos, mc, 0xff7b00);
+                m.hp -= 2;
+            });
+            cleanupDeadMonsters();
+            spawnFloatingLabel("🧂 VÝBUCH SOĽNEJ LAMPY: TRHLINY ZATVORENÉ!", window.innerWidth / 2, window.innerHeight * 0.4, "text-orange-300 text-base");
+            updateHUD();
+        }
+
+        function triggerTvWasherOverload() {
+            if (!state.running || state.paused || state.arcCooldown > 0) return;
+            state.arcCooldown = 14;
+            sfx.upsideDownThunder();
+            camState.shakeIntensity = 0.22;
+
+            const washerPos = new THREE.Vector3(-2.7, 0.5, 3.15);
+            const tvPos = new THREE.Vector3(2.55, 0.98, 0.55);
+            create3DBeam(washerPos, tvPos, 0xc084fc);
+
+            state.monsters.forEach(m => {
+                const mc = m.group.position.clone().add(new THREE.Vector3(0, 0.55 * m.scale, 0));
+                create3DBeam(tvPos, mc, 0xc084fc);
+                create3DBeam(washerPos, mc, 0x38bdf8);
+                m.hp -= 5;
+            });
+            cleanupDeadMonsters();
+            spawnFloatingLabel("⚡ ELEKTRICKÝ VÝBOJ: TV + PRÁČKA BEKO!", window.innerWidth / 2, window.innerHeight * 0.38, "text-purple-300 text-base");
+            updateHUD();
+        }
+
+        function cleanupDeadMonsters() {
+            for (let i = state.monsters.length - 1; i >= 0; i--) {
+                const m = state.monsters[i];
+                if (m.hp <= 0) {
+                    addGamePoints(m.pts);
+                    roomGroup.remove(m.group);
+                    if (m.domBar) m.domBar.remove();
+                    state.monsters.splice(i, 1);
+                } else if (m.domBar) {
+                    const fill = m.domBar.querySelector('.hp-fill');
+                    if (fill) fill.style.width = `${Math.max(0, (m.hp / m.maxHp) * 100)}%`;
+                }
+            }
+        }
+
+        function addGamePoints(pts) {
+            state.score += pts;
+            if (state.world === 'normal') {
+                state.phaseScore += pts;
+                if (state.phaseScore >= state.targetScore) {
+                    sfx.sealChime();
+                    state.phaseScore = 0;
+                    state.targetScore += 300;
+                    state.timeLeft = 50;
+                    clearDynamicEntities();
+                    spawnFloatingLabel("🎉 KOLO SPLNENÉ! OBÝVAČKA JE V BEZPEČÍ!", window.innerWidth / 2, window.innerHeight * 0.35, "text-emerald-300 text-lg");
+                }
+            }
+        }
+
+        /*************************************************************************
+         * 10. LIVE TV SCREEN GRAPHICS & 2D OVERLAY PROJECTION
+         *************************************************************************/
+        function updateTvScreenCanvas(now) {
+            const ctx = tvScreenData.ctx;
+            if (state.world === 'normal' && !state.flipping) {
+                ctx.fillStyle = '#071324';
+                ctx.fillRect(0, 0, 512, 288);
+
+                ctx.strokeStyle = '#00f0ff';
+                ctx.lineWidth = 3;
+                for (let r = 32; r <= 110; r += 36) {
+                    ctx.beginPath();
+                    ctx.arc(256, 150, r, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
+                const sweep = (now * 0.0035) % (Math.PI * 2);
+                ctx.beginPath();
+                ctx.moveTo(256, 150);
+                ctx.lineTo(256 + Math.cos(sweep) * 110, 150 + Math.sin(sweep) * 110);
+                ctx.stroke();
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.font = 'bold 22px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(` AKTÍVNE TRHLINY: ${state.rifts.length}`, 256, 36);
+            } else {
+                // Red Upside Down Lightning & Static on the TV Screen!
+                ctx.fillStyle = '#24030a';
+                ctx.fillRect(0, 0, 512, 288);
+
+                for (let s = 0; s < 35; s++) {
+                    ctx.fillStyle = Math.random() < 0.5 ? 'rgba(255, 30, 39, 0.35)' : 'rgba(255, 255, 255, 0.15)';
+                    ctx.fillRect(Math.random() * 512, Math.random() * 288, Math.random() * 90, 4);
+                }
+
+                ctx.fillStyle = '#ff1e27';
+                ctx.font = 'bold 26px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ UPSIDE DOWN: FÁZA ${state.upsideStage}/4`, 256, 145);
+                ctx.font = 'bold 18px Inter, sans-serif';
+                ctx.fillStyle = '#fecdd3';
+                ctx.fillText(DEMOGORGON_STAGES[state.upsideStage].name.toUpperCase(), 256, 185);
+            }
+            tvScreenData.tex.needsUpdate = true;
+        }
+
+        function project3DToScreen(vec3) {
+            const v = vec3.clone();
+            v.project(camera);
+            if (v.z > 1) return null;
+            return {
+                x: (v.x * 0.5 + 0.5) * window.innerWidth,
+                y: (-(v.y * 0.5) + 0.5) * window.innerHeight
+            };
+        }
+
+        function updateHUD() {
+            const wEmoji = document.getElementById('worldEmoji');
+            const wTitle = document.getElementById('worldTitle');
+            const wBadge = document.getElementById('worldBadge');
+            const waveTag = document.getElementById('waveTag');
+            const bar = document.getElementById('scoreBar');
+            const scoreDisp = document.getElementById('scoreDisplay');
+
+            if (state.world === 'normal') {
+                wEmoji.textContent = '🏠';
+                wTitle.textContent = 'Originál Obývačka';
+                wBadge.className = "flex items-center gap-1.5 text-xs font-extrabold text-emerald-300 whitespace-nowrap";
+                waveTag.textContent = 'Zatváraj Trhliny!';
+                const pct = Math.min(100, (state.phaseScore / state.targetScore) * 100);
+                bar.style.width = `${pct}%`;
+                bar.className = "h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-200";
+                scoreDisp.textContent = `${state.phaseScore} / ${state.targetScore}`;
+            } else {
+                const stCfg = DEMOGORGON_STAGES[state.upsideStage];
+                wEmoji.textContent = '🌀';
+                wTitle.textContent = 'UPSIDE DOWN';
+                wBadge.className = "flex items-center gap-1.5 text-xs font-extrabold text-red-400 whitespace-nowrap animate-pulse";
+                waveTag.textContent = `Fáza ${state.upsideStage}/4 (${stCfg.scale}x)`;
+                const pct = Math.min(100, ((state.upsideStage - 1) * 25) + (state.killsInStage / 2) * 25);
+                bar.style.width = `${pct}%`;
+                bar.className = "h-full bg-gradient-to-r from-red-600 via-orange-500 to-amber-300 transition-all duration-200";
+                scoreDisp.textContent = `${stCfg.name}`;
+            }
+
+            document.getElementById('timerDisplay').textContent = `${state.timeLeft}s`;
+
+            let heartsHtml = '';
+            for (let i = 0; i < state.maxLives; i++) {
+                heartsHtml += i < state.lives ? '<span>❤️</span>' : '<span class="opacity-25">🖤</span>';
+            }
+            document.getElementById('heartsContainer').innerHTML = heartsHtml;
+
+            document.getElementById('saltLampBtnText').textContent =
+                state.saltCooldown > 0 ? `Soľná Lampa (${state.saltCooldown}s)` : "Soľná Lampa (Space)";
+            document.getElementById('arcBtnText').textContent =
+                state.arcCooldown > 0 ? `TV + Práčka (${state.arcCooldown}s)` : "TV + Práčka Výboj (E)";
+        }
+
+        function spawnFloatingLabel(text, x, y, cls) {
+            const layer = document.getElementById('floatingLayer');
+            const el = document.createElement('div');
+            el.className = `floating-label font-arcade text-xs sm:text-sm ${cls}`;
+            el.style.left = `${Math.max(80, Math.min(window.innerWidth - 80, x))}px`;
+            el.style.top = `${Math.max(55, y)}px`;
+            el.textContent = text;
+            layer.appendChild(el);
+            setTimeout(() => el.remove(), 1150);
+        }
+
+        function toggleInfoModal() {
+            const m = document.getElementById('infoModal');
+            if (m.classList.contains('hidden')) {
+                state.paused = true;
+                m.classList.remove('hidden');
+            } else {
+                closeModalAndPlay();
+            }
+        }
+
+        function closeModalAndPlay() {
+            sfx.init();
+            document.getElementById('infoModal').classList.add('hidden');
+            document.getElementById('gameOverModal').classList.add('hidden');
+            if (!state.running) {
+                state.running = true;
+                state.lastSecond = performance.now();
+                state.lastRiftSpawn = performance.now();
+                sfx.startMusic();
+                // Spawn initial rift right away so the player sees the action immediately
+                if (state.world === 'normal' && state.rifts.length === 0) {
+                    spawn3DRift();
+                }
+            }
+            state.paused = false;
+            updateHUD();
+        }
+
+        function resetFullGame() {
+            clearDynamicEntities();
+            state.score = 0;
+            state.phaseScore = 0;
+            state.targetScore = 1000;
+            state.lives = 4;
+            state.timeLeft = 50;
+            state.upsideStage = 1;
+            state.killsInStage = 0;
+            if (state.world === 'upsideDown') {
+                triggerWorldFlip3D('normal', "Nová hra v upratanej 3D obývačke!");
+            }
+            closeModalAndPlay();
+        }
+
+        function showGameOver() {
+            state.running = false;
+            state.paused = true;
+            document.getElementById('finalScoreVal').textContent = state.score;
+            document.getElementById('finalMonsterVal').textContent = state.biggestMonsterName;
+            document.getElementById('gameOverModal').classList.remove('hidden');
+        }
+
+        // Event Listeners
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        renderer.domElement.addEventListener('mousedown', onPointerDown);
+        renderer.domElement.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            onPointerDown(e);
+        }, { passive: false });
+
+        window.addEventListener('mousemove', (e) => {
+            if (camState.isDragging) {
+                camState.yawOffset -= (e.clientX - camState.dragStartX) * 0.005;
+                camState.pitchOffset -= (e.clientY - camState.dragStartY) * 0.004;
+                camState.dragStartX = e.clientX;
+                camState.dragStartY = e.clientY;
+            } else {
+                const nx = (e.clientX / window.innerWidth) - 0.5;
+                const ny = (e.clientY / window.innerHeight) - 0.5;
+                camState.yawOffset = -nx * 0.28;
+                camState.pitchOffset = -ny * 0.16;
+            }
+        });
+
+        window.addEventListener('mouseup', () => { camState.isDragging = false; });
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === '1') setCameraPreset(1);
+            if (e.key === '2') setCameraPreset(2);
+            if (e.key === '3') setCameraPreset(3);
+            if (e.key === ' ') triggerSaltLampWave();
+            if (e.key === 'e' || e.key === 'E') triggerTvWasherOverload();
+            if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') toggleInfoModal();
+        });
+
+        /*************************************************************************
+         * 11. MAIN 3D RENDER & GAMEPLAY LOOP
+         *************************************************************************/
+        let lastFrameTime = performance.now();
+
+        function animate3D(now) {
+            requestAnimationFrame(animate3D);
+            const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+
+            // 1. Camera Interpolation & 180-Degree Upside Down Roll
+            const targetPreset = CAMERA_PRESETS[camState.preset];
+            camState.currentPos.lerp(targetPreset.pos, 0.07);
+            camState.currentLook.lerp(targetPreset.look, 0.07);
+
+            camera.position.copy(camState.currentPos);
+            if (camState.shakeIntensity > 0) {
+                camera.position.x += (Math.random() - 0.5) * camState.shakeIntensity;
+                camera.position.y += (Math.random() - 0.5) * camState.shakeIntensity;
+                camState.shakeIntensity *= 0.9;
+                if (camState.shakeIntensity < 0.004) camState.shakeIntensity = 0;
+            }
+
+            const lookTarget = camState.currentLook.clone();
+            lookTarget.x += camState.yawOffset * 2.0;
+            lookTarget.y += camState.pitchOffset * 1.4;
+            camera.lookAt(lookTarget);
+
+            camState.rollAngle += (camState.targetRollAngle - camState.rollAngle) * 0.08;
+            camera.rotation.z += camState.rollAngle;
+
+            // 2. Float 3D Spores
+            const posArr = sporeGeo.attributes.position.array;
+            for (let i = 0; i < sporeCount; i++) {
+                posArr[i * 3 + 1] += state.world === 'upsideDown' ? 0.006 : 0.002;
+                posArr[i * 3] += Math.sin(now * 0.001 + i) * 0.002;
+                if (posArr[i * 3 + 1] > 2.7) posArr[i * 3 + 1] = 0.05;
+            }
+            sporeGeo.attributes.position.needsUpdate = true;
+
+            updateTvScreenCanvas(now);
+
+            // 3. Gameplay Logic
+            if (state.running && !state.paused && !state.flipping) {
+                if (now - state.lastSecond >= 1000) {
+                    state.lastSecond = now;
+                    state.timeLeft--;
+                    if (state.saltCooldown > 0) state.saltCooldown--;
+                    if (state.arcCooldown > 0) state.arcCooldown--;
+
+                    if (state.timeLeft <= 0) {
+                        if (state.world === 'normal') {
+                            // Round timer expired without reaching score goal -> Flip to Upside Down!
+                            triggerWorldFlip3D('upsideDown', "Vypršal čas na získanie bodov! Obývačka sa prepadáva do Upside Down!");
+                        } else {
+                            state.upsideStage = Math.min(4, state.upsideStage + 1);
+                            state.timeLeft = 45;
+                            spawn3DDemogorgon(state.upsideStage);
+                        }
+                    }
+                    updateHUD();
+                }
+
+                if (state.slowMoTimer > 0) state.slowMoTimer--;
+
+                // Spawn Rifts & Demogorgons
+                if (state.world === 'normal') {
+                    if (now - state.lastRiftSpawn > 2800 && state.rifts.length < 3) {
+                        spawn3DRift();
+                        state.lastRiftSpawn = now;
+                    }
+                    // Occasional Young Demogorgon in Original World
+                    if (now - state.lastMonsterSpawn > 7500 && state.monsters.length < 1) {
+                        spawn3DDemogorgon(1);
+                        state.lastMonsterSpawn = now;
+                    }
+                } else {
+                    // Upside Down: Continuous waves of progressively larger Demogorgons
+                    const spawnDelay = Math.max(1600, 3200 - state.upsideStage * 320);
+                    if (now - state.lastMonsterSpawn > spawnDelay && state.monsters.length < 3) {
+                        spawn3DDemogorgon(state.upsideStage);
+                        state.lastMonsterSpawn = now;
+                    }
+                }
+
+                if (Math.random() < 0.002 && state.waffles.length === 0) {
+                    spawn3DWaffle();
+                }
+
+                if (state.flipping || state.world === 'upsideDown' || state.rifts.length >= 2) {
+                    ceilingSpotLights.forEach((l, idx) => {
+                        l.intensity = 0.45 + Math.abs(Math.sin(now * 0.016 + idx)) * 0.95;
+                    });
+                }
+            }
+
+            // 4. Update 3D Rifts & CRITICAL RULE: If any Rift countdown hits 0 -> IMMEDIATE UPSIDE DOWN FLIP!
+            for (let i = state.rifts.length - 1; i >= 0; i--) {
+                const r = state.rifts[i];
+                r.halo.rotation.z += 0.06;
+                const pulse = 1 + Math.sin(now * 0.012 + i) * 0.16;
+                r.core.scale.set(0.55 * pulse, 1.75 * pulse, 0.18);
+
+                if (state.running && !state.paused && !state.flipping) {
+                    r.remainingSeconds -= dt;
+
+                    // Update 2D countdown label position & timer text
+                    if (r.domBadge) {
+                        const screenPt = project3DToScreen(r.group.position.clone().add(new THREE.Vector3(0, 0.48, 0)));
+                        if (screenPt) {
+                            r.domBadge.style.left = `${screenPt.x}px`;
+                            r.domBadge.style.top = `${screenPt.y}px`;
+                            r.domBadge.style.display = 'flex';
+                            const secSpan = r.domBadge.querySelector('.rift-sec');
+                            if (secSpan) {
+                                secSpan.textContent = `${Math.max(0, r.remainingSeconds).toFixed(1)}s`;
+                                if (r.remainingSeconds < 3.0) {
+                                    secSpan.className = "rift-sec text-red-400 animate-ping font-black";
+                                }
+                            }
+                        } else {
+                            r.domBadge.style.display = 'none';
+                        }
+                    }
+
+                    // CRITICAL GUARANTEE: Failing to close a rift in time IMMEDIATELY flips the room into the Upside Down!
+                    if (r.remainingSeconds <= 0 && state.world === 'normal') {
+                        triggerWorldFlip3D('upsideDown', "Nestihol si zatvoriť trhlinu včas! Brána sa pretrhla a prepadol si sa do Upside Down!");
+                        break;
+                    }
+                }
+            }
+
+            // 5. Animate Bipedal 3D Demogorgons (Walking legs, swinging clawed arms, opening 5-petal jaw)
+            const speedMult = state.slowMoTimer > 0 ? 0.45 : 1.0;
+            for (let i = state.monsters.length - 1; i >= 0; i--) {
+                const m = state.monsters[i];
+                const tWalk = now * 0.009 + m.walkPhase;
+
+                // Bipedal leg & arm swing animation
+                m.leftLegPivot.rotation.x = Math.sin(tWalk) * 0.55;
+                m.rightLegPivot.rotation.x = -Math.sin(tWalk) * 0.55;
+                m.leftArmPivot.rotation.x = -Math.sin(tWalk) * 0.35;
+                m.rightArmPivot.rotation.x = Math.sin(tWalk) * 0.35;
+
+                // 5-Petal Star Head blooming open & snapping shut
+                const petalSpread = 0.35 + Math.abs(Math.sin(now * 0.006 + m.walkPhase)) * 0.55;
+                m.petals.forEach(p => { p.rotation.x = petalSpread; });
+
+                if (state.running && !state.paused && !state.flipping) {
+                    const dir = m.targetPos.clone().sub(m.group.position);
+                    const dist = dir.length();
+                    dir.normalize();
+                    m.group.position.addScaledVector(dir, m.speed * speedMult);
+                    m.group.lookAt(m.targetPos.x, m.group.position.y, m.targetPos.z);
+
+                    // Heavy footstep shake for Stage 3 Alfa & Stage 4 Colossal Mega-Demogorgon
+                    if (m.stageNum >= 3 && Math.abs(Math.sin(tWalk)) > 0.96) {
+                        camState.shakeIntensity = Math.max(camState.shakeIntensity, 0.035 * m.scale);
+                    }
+
+                    if (m.domBar) {
+                        const headPt = project3DToScreen(m.group.position.clone().add(new THREE.Vector3(0, 1.22 * m.scale, 0)));
+                        if (headPt) {
+                            m.domBar.style.left = `${headPt.x}px`;
+                            m.domBar.style.top = `${headPt.y}px`;
+                            m.domBar.style.display = 'flex';
+                        } else {
+                            m.domBar.style.display = 'none';
+                        }
+                    }
+
+                    if (dist < 0.55) {
+                        state.lives--;
+                        camState.shakeIntensity = 0.28;
+                        sfx.demogorgonRoar(m.scale);
+                        spawnFloatingLabel(`💔 ${m.name.toUpperCase()} ZAÚTOČIL!`, window.innerWidth / 2, window.innerHeight * 0.5, "text-red-500 text-base");
+                        roomGroup.remove(m.group);
+                        if (m.domBar) m.domBar.remove();
+                        state.monsters.splice(i, 1);
+                        updateHUD();
+                        if (state.lives <= 0) {
+                            showGameOver();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 6. Animate 3D Eggo Waffles
+            for (let i = state.waffles.length - 1; i >= 0; i--) {
+                const w = state.waffles[i];
+                w.group.rotation.y += 0.04;
+                if (state.running && !state.paused) {
+                    w.life--;
+                    if (w.life <= 0) {
+                        roomGroup.remove(w.group);
+                        state.waffles.splice(i, 1);
+                    }
+                }
+            }
+
+            // 7. Fade out 3D Beams
+            for (let i = state.beams3D.length - 1; i >= 0; i--) {
+                const b = state.beams3D[i];
+                b.life--;
+                if (b.life <= 0) {
+                    roomGroup.remove(b.mesh);
+                    b.mesh.geometry.dispose();
+                    state.beams3D.splice(i, 1);
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            buildFull3DLivingRoom();
+            setCameraPreset(1);
+            requestAnimationFrame(animate3D);
+        };
+    </script>
+</body>
+</html>
